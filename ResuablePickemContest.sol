@@ -1,10 +1,22 @@
-// SPDX-License-Identifier: MIT
 pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "@chainlink/contracts/src/v0.8/KeeperCompatible.sol";
+import "./PickemContestManager.sol";
 
-contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
+// Struct that represents a game for the PickEm
+// Team1Name and Team2Name up to 32 characters
+// startTime is unix timestamp
+// winner will be set to 1 or 2 after the game concludes, depending on which team won
+struct Game {
+  bytes32 team1Name;
+  bytes32 team2Name;
+  uint32 startTime;
+  uint16 id;
+  uint8 winner;
+  string sportsRadarId;
+}
+
+contract GrandFantasyNFTPickEm {
   using Counters for Counters.Counter;
 
   // Whether or not players can place picks, this will be set to false before game begin
@@ -12,6 +24,9 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
 
   // Address of the Grand Fantasy managed wallet that will perform administrative actions for the contest
   address public administrator;
+
+  // Address of Grand Fantasy contest manager smart contract that handles deployment of contests
+  address public managerAddress;
 
   // UNIX timestamp of what time the next PickEm competition will open for entries...0 for not scheduled
   uint32 public nextContestStartTime;
@@ -79,7 +94,7 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
   }
 
   // Determines whether or not upkeep is needed on the contract
-  function checkUpkeep(bytes calldata checkData) external override returns (bool upkeepNeeded, bytes memory performData) {
+  function checkUpkeep() external view returns (bool upkeepNeeded) {
     if((block.timestamp - lastTimeStamp) > interval) {
       // If there have been no games added or contest details have not been added, there is no upkeep to perform
       if(totalPicksRequired > 0 && requirementToWin > 0) {
@@ -90,10 +105,10 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     } else {
       upkeepNeeded = false;
     }
-    performData = checkData;
   }
 
-  function performUpkeep(bytes calldata performData) external override {
+  function performUpkeep() external {
+    require(msg.sender == administrator);
     lastTimeStamp = block.timestamp;
 
     // If the contest is closed for entries, but the next contest has been scheduled
@@ -113,7 +128,7 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     // If the contest is closed for entries and a contest is ongoing
     else if(!contestOpen && nextContestStartTime == 0 && gameWinnersReceived) {
       // Resolve contest and pay out winners if it has been at least 8 hours since the start
-      // time of the lastest game
+      // time of the latest game
       // This also requires knowing the outcome of the games
       if(block.timestamp > lastGameStartTime && block.timestamp - lastGameStartTime >= 28800) {
         markForPayout();
@@ -125,12 +140,16 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
       // earliest game
       if(block.timestamp > firstGameStartTime) {
         contestOpen = false;
+        if(currentEntrants.current() < 3) {
+          refundContest();
+        }
       } else if(firstGameStartTime - block.timestamp <= 5400) {
         contestOpen = false;
+        if(currentEntrants.current() < 3) {
+          refundContest();
+        }
       }
     }
-
-    performData;
 }
 
 
@@ -146,22 +165,27 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     administrator = newAdministrator;
   }
 
+  // Set grand fantasy manager address
+  // ADMINISTRATOR ONLY
+  function setManagerAddress(address manager) public {
+    require(msg.sender == administrator);
+    managerAddress = manager;
+  }
+
   // Function that sets the start time, number of picks required to win, and
   // maximum entrants of a new contest
-  // ADMINISTRATOR ONLY
   // Param startTime - unix timestamp for start time
-  // Param requirement - # of correct picks required to win the PickEm contest
-  // Param max - maximum entrants into this contest
-  function setContestDetails(uint32 startTime, uint8 requirement, uint32 max) public {
-    require(msg.sender == administrator);
+  function setContestDetails(uint32 startTime) private {
     require(contestResolved);
 
     // Winners could still be populated from a previous contest, clear the array
     delete winners;
 
     nextContestStartTime = startTime;
+
+    uint8 requirement = totalPicksRequired - (totalPicksRequired / 3);
     requirementToWin = requirement;
-    maxEntrants = max;
+    maxEntrants = 20;
   }
 
   // Setter for metadata regarding this contest
@@ -175,17 +199,6 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     weiEntryFee = entryFee;
   }
 
-  // Struct that represents a game for the PickEm
-  // Team1Name and Team2Name up to 32 characters
-  // startTime is unix timestamp
-  // winner will be set to 1 or 2 after the game concludes, depending on which team won
-  struct Game {
-    bytes32 team1Name;
-    bytes32 team2Name;
-    uint32 startTime;
-    uint16 id;
-    uint8 winner;
-  }
   // Maps GameIds to game struct
   mapping (uint16 => Game) public games;
 
@@ -222,10 +235,10 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
   address[] public playersToday;
 
   // Adds [games] for use in the PickEm contest. Winner value of these games will be set to 0.
-  // ADMINISTRATOR ONLY
+  // ADMINISTRATOR ONLY - this will be called each day at
   // Param newGames are the games to add to the games mapping
   function addGames(Game[] memory newGames) public {
-    require(msg.sender == administrator);
+    require(msg.sender == managerAddress);
     require(contestResolved);
 
     totalPicksRequired = uint8(newGames.length);
@@ -253,6 +266,10 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     // Save earliest and latest start time to storage
     firstGameStartTime = uint32(firstStartTime);
     lastGameStartTime = lastStartTime;
+
+    // Open contest for entries 24 hours before games
+    uint256 contestStartTime = firstStartTime - 86400;
+    setContestDetails(uint32(contestStartTime));
   }
 
   // Function to make picks here
@@ -319,21 +336,25 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
   }
 
   function receiveWinners(uint8[] memory finalGames) public {
-    require(msg.sender == administrator);
+    require(msg.sender == managerAddress);
 
-    uint i;
-    // Update all game structs to contain the winners using administrator data
-    for(i = 0; i < finalGames.length; i++) {
-      games[uint16(i)].winner = finalGames[i];
+    // If the contest has been refunded, we don't want to do any of this
+    if(contestResolved == false) {
+      uint i;
+      // Update all game structs to contain the winners using administrator data
+      for(i = 0; i < finalGames.length; i++) {
+        games[uint16(i)].winner = finalGames[i];
+      }
+
+      gameWinnersReceived = true;
     }
-
-    gameWinnersReceived = true;
   }
 
   function markForPayout() private {
     uint i;
     uint8 correctPicks;
     uint x;
+    ContestPerformance[] memory contestPerformances = new ContestPerformance[](currentEntrants.current());
 
     // At this point, the winner portion of the games structs are set
     // Go through all players today
@@ -361,8 +382,27 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
       player.enteredToday = false;
 
       // If the player has enough correct picks, they are officially a winner
+      ContestPerformance memory newPerformance;
       if(correctPicks >= requirementToWin) {
+        newPerformance.contestName = contestName;
+        newPerformance.entryFee = weiEntryFee;
+        newPerformance.payout = 0;
+        newPerformance.status = 2;
+        newPerformance.picksCorrect = correctPicks;
+        newPerformance.totalPicks = totalPicksRequired;
+        newPerformance.player = playersToday[i];
+        contestPerformances[i] = newPerformance;
+
         winners.push(player.playerAddress);
+      } else {
+        newPerformance.contestName = contestName;
+        newPerformance.entryFee = weiEntryFee;
+        newPerformance.payout = 0;
+        newPerformance.status = 1;
+        newPerformance.picksCorrect = correctPicks;
+        newPerformance.totalPicks = totalPicksRequired;
+        newPerformance.player = playersToday[i];
+        contestPerformances[i] = newPerformance;
       }
 
       // Set memory variable back to storage so that changes persist
@@ -374,14 +414,89 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     uint256 payout;
     if(winners.length > 0) {
       payout = (prizePool / 10 * 9) / winners.length;
-    }
-    for(i = 0; i < winners.length; i++) {
-      playerStructs[winners[i]].weiOwed = playerStructs[winners[i]].weiOwed + payout;
+    } else {
+      playerStructs[administrator].weiOwed = playerStructs[administrator].weiOwed + prizePool;
     }
 
-    // The administrator wallet is able to withdraw the rake
-    uint256 rake = prizePool / 10;
-    playerStructs[administrator].weiOwed = playerStructs[administrator].weiOwed + rake;
+    bool takeRake = false;
+
+    for(i = 0; i < winners.length; i++) {
+      if(payout < weiEntryFee) {
+        playerStructs[winners[i]].weiOwed = playerStructs[winners[i]].weiOwed + weiEntryFee;
+      } else {
+        playerStructs[winners[i]].weiOwed = playerStructs[winners[i]].weiOwed + payout;
+        takeRake = true;
+      }
+    }
+
+    for(i = 0; i<contestPerformances.length; i++) {
+      if(payout < weiEntryFee &&  (contestPerformances[i].picksCorrect >= requirementToWin)) {
+        contestPerformances[i].payout = contestPerformances[i].payout + weiEntryFee;
+      } else if(contestPerformances[i].picksCorrect >= requirementToWin) {
+        contestPerformances[i].payout = contestPerformances[i].payout + payout;
+      }
+    }
+
+    GrandFantasyManager manager = GrandFantasyManager(managerAddress);
+    manager.receivePerformance(contestPerformances);
+
+    if(takeRake) {
+      // The administrator wallet is able to withdraw the rake
+      uint256 rake = prizePool / 10;
+      playerStructs[administrator].weiOwed = playerStructs[administrator].weiOwed + rake;
+    }
+
+    // Delete all games from the games mapping
+    for(i = 0; i < totalPicksRequired; i++) {
+      delete games[uint16(i)];
+    }
+
+    // Do some housekeeping to get ready for any future contests
+    requirementToWin = 0;
+    totalPicksRequired = 0;
+    prizePool = 0;
+    maxEntrants = 0;
+    firstGameStartTime = 0;
+    lastGameStartTime = 0;
+    gameWinnersReceived = false;
+    contestResolved = true;
+
+    delete playersToday;
+    currentEntrants.reset();
+  }
+
+  //Function to refund contest
+  function refundContest() private {
+    uint i;
+    ContestPerformance[] memory refundPerformances = new ContestPerformance[](playersToday.length);
+    for(i = 0; i < playersToday.length; i++) {
+      Player memory player = playerStructs[playersToday[i]];
+
+      // Clear the pick ids, they will never be needed again but we may need this field again
+      delete player.pickIds;
+
+      // Remove entered today so that players will be able to enter the next contest
+      player.enteredToday = false;
+
+      // Refund the entry fee to the contest
+      player.weiOwed = player.weiOwed + weiEntryFee;
+
+      // Set memory variable back to storage so that changes persist
+      playerStructs[playersToday[i]] = player;
+
+      ContestPerformance memory newPerformance;
+      newPerformance.contestName = contestName;
+      newPerformance.entryFee = weiEntryFee;
+      newPerformance.payout = weiEntryFee;
+      newPerformance.status = 0;
+      newPerformance.picksCorrect = 0;
+      newPerformance.totalPicks = 0;
+      newPerformance.player = playersToday[i];
+      refundPerformances[i] = newPerformance;
+    }
+
+    GrandFantasyManager manager = GrandFantasyManager(managerAddress);
+    manager.receivePerformance(refundPerformances);
 
     // Delete all games from the games mapping
     for(i = 0; i < totalPicksRequired; i++) {
@@ -418,4 +533,3 @@ contract GrandFantasyNFTPickEm is KeeperCompatibleInterface {
     return playerStructs[msg.sender].weiOwed;
   }
 }
-
