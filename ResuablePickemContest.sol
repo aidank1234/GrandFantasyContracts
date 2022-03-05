@@ -7,14 +7,14 @@ import "./PickemContestManager.sol";
 // Team1Name and Team2Name up to 32 characters
 // startTime is unix timestamp
 // winner will be set to 1 or 2 after the game concludes, depending on which team won
-struct Game {
-  bytes32 team1Name;
-  bytes32 team2Name;
-  uint32 startTime;
-  uint16 id;
-  uint8 winner;
-  string sportsRadarId;
-}
+  struct Game {
+    bytes32 team1Name;
+    bytes32 team2Name;
+    uint32 startTime;
+    uint16 id;
+    uint8 winner;
+    string sportsRadarId;
+  }
 
 contract GrandFantasyNFTPickEm {
   using Counters for Counters.Counter;
@@ -93,6 +93,12 @@ contract GrandFantasyNFTPickEm {
     lastTimeStamp = block.timestamp;
   }
 
+  //Only executable by contract administrator
+  modifier onlyAdmin {
+    require(msg.sender == administrator);
+    _;
+  }
+
   // Determines whether or not upkeep is needed on the contract
   function checkUpkeep() external view returns (bool upkeepNeeded) {
     if((block.timestamp - lastTimeStamp) > interval) {
@@ -107,8 +113,7 @@ contract GrandFantasyNFTPickEm {
     }
   }
 
-  function performUpkeep() external {
-    require(msg.sender == administrator);
+  function performUpkeep() external onlyAdmin {
     lastTimeStamp = block.timestamp;
 
     // If the contest is closed for entries, but the next contest has been scheduled
@@ -150,7 +155,7 @@ contract GrandFantasyNFTPickEm {
         }
       }
     }
-}
+  }
 
 
   // Returns the number of current entrants into the contest
@@ -159,16 +164,12 @@ contract GrandFantasyNFTPickEm {
   }
 
   // Passes administration privleges to a new address
-  // ADMINISTRATOR ONLY
-  function passAdministrationPrivleges(address newAdministrator) public {
-    require(msg.sender == administrator);
+  function passAdministrationPrivleges(address newAdministrator) public onlyAdmin {
     administrator = newAdministrator;
   }
 
   // Set grand fantasy manager address
-  // ADMINISTRATOR ONLY
-  function setManagerAddress(address manager) public {
-    require(msg.sender == administrator);
+  function setManagerAddress(address manager) public onlyAdmin {
     managerAddress = manager;
   }
 
@@ -189,11 +190,9 @@ contract GrandFantasyNFTPickEm {
   }
 
   // Setter for metadata regarding this contest
-  // ADMINISTRATOR ONLY
   // Param name - name for the contest for display in UI
   // Param entryFee - entry fee, in wei, for the contest
-  function setContestMetadata(bytes32 name, uint256 entryFee) public {
-    require(msg.sender == administrator);
+  function setContestMetadata(bytes32 name, uint256 entryFee) public onlyAdmin {
     require(contestResolved);
     contestName = name;
     weiEntryFee = entryFee;
@@ -235,10 +234,8 @@ contract GrandFantasyNFTPickEm {
   address[] public playersToday;
 
   // Adds [games] for use in the PickEm contest. Winner value of these games will be set to 0.
-  // ADMINISTRATOR ONLY - this will be called each day at
   // Param newGames are the games to add to the games mapping
-  function addGames(Game[] memory newGames) public {
-    require(msg.sender == managerAddress);
+  function addGames(Game[] memory newGames) public onlyAdmin {
     require(contestResolved);
 
     totalPicksRequired = uint8(newGames.length);
