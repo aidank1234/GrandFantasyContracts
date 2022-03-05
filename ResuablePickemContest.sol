@@ -278,7 +278,7 @@ contract GrandFantasyNFTPickEm {
     require(currentEntrants.current() < maxEntrants);
 
     // Require the value of the transaction to be over the wei entry fee
-    require(msg.value >= weiEntryFee);
+    require(msg.value == weiEntryFee);
 
     address player = msg.sender;
     // Only one entry allowed per player
