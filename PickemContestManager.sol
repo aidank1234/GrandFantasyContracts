@@ -21,6 +21,7 @@ contract GrandFantasyManager {
   mapping (address => uint[]) public playerPerformances;
   Counters.Counter private currentPerformanceId;
 
+  // Only executable by contract administrator
   modifier onlyAdmin {
     require(msg.sender == administrator);
     _;

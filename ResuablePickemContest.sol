@@ -93,7 +93,7 @@ contract GrandFantasyNFTPickEm {
     lastTimeStamp = block.timestamp;
   }
 
-  //Only executable by contract administrator
+  // Only executable by contract administrator
   modifier onlyAdmin {
     require(msg.sender == administrator);
     _;
@@ -270,7 +270,7 @@ contract GrandFantasyNFTPickEm {
   }
 
   // Function to make picks here
-  function submitPicksForContest(uint8[] memory playerPicks) public payable {
+  function submitPicksForContest(uint8 playerPicks) public payable {
     // Require contest to be open to place picks
     require(contestOpen);
 
@@ -283,8 +283,6 @@ contract GrandFantasyNFTPickEm {
     address player = msg.sender;
     // Only one entry allowed per player
     require(playerStructs[player].enteredToday == false);
-    // # of picks submitted must exactly equal the number of games
-    require(playerPicks.length == totalPicksRequired);
 
     // This is a new player, initialize them in the struct
     if(playerStructs[player].playerAddress == address(0x0)) {
@@ -295,14 +293,14 @@ contract GrandFantasyNFTPickEm {
     playerStructs[player].pickIds.push(newPickId);
 
     uint i;
-    for(i = 0; i<playerPicks.length; i++) {
+    for(i = 0; i<totalPicksRequired; i++) {
       // Picks must either be for team 1 or team 2, no other values
-      require(playerPicks[i] == 1 || playerPicks[i] == 2);
+      require((playerPicks>>i)%2 == 1 || (playerPicks>>i)%2 == 2);
 
       // Create data for each pick
       Pick memory newPick;
       newPick.gameId = uint16(i);
-      newPick.pick = playerPicks[i];
+      newPick.pick = (playerPicks>>i)%2;
       uint24 newPickId = uint24(currentPickId.current());
       newPick.pickId = newPickId;
 
