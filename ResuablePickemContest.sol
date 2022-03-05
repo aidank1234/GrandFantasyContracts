@@ -286,6 +286,14 @@ contract GrandFantasyNFTPickEm {
     // # of picks submitted must exactly equal the number of games
     require(playerPicks.length == totalPicksRequired);
 
+    // This is a new player, initialize them in the struct
+    if(playerStructs[player].playerAddress == address(0x0)) {
+      Player memory newPlayer;
+      newPlayer.playerAddress = player;
+      playerStructs[player] = newPlayer;
+    }
+    playerStructs[player].pickIds.push(newPickId);
+
     uint i;
     for(i = 0; i<playerPicks.length; i++) {
       // Picks must either be for team 1 or team 2, no other values
@@ -297,16 +305,6 @@ contract GrandFantasyNFTPickEm {
       newPick.pick = playerPicks[i];
       uint24 newPickId = uint24(currentPickId.current());
       newPick.pickId = newPickId;
-
-      // This is a new player, initialize them in the struct
-      if(i == 0 && playerStructs[player].playerAddress == address(0x0)) {
-        Player memory newPlayer;
-        newPlayer.playerAddress = player;
-        playerStructs[player] = newPlayer;
-        playerStructs[player].pickIds.push(newPickId);
-      } else {
-        playerStructs[player].pickIds.push(newPickId);
-      }
 
       // Reflect the new pick in the picks struct
       picks[newPickId] = newPick;
