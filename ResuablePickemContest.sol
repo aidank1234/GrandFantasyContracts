@@ -293,13 +293,14 @@ contract GrandFantasyNFTPickEm {
 
     uint i;
     for(i = 0; i<totalPicksRequired; i++) {
+      uint8 playerPick = ((playerPicks>>i)%2)+1;
       // Picks must either be for team 1 or team 2, no other values
-      require((playerPicks>>i)%2 == 1 || (playerPicks>>i)%2 == 2);
+      require(playerPick == 1 || playerPick == 2);
 
       // Create data for each pick
       Pick memory newPick;
       newPick.gameId = uint16(i);
-      newPick.pick = (playerPicks>>i)%2;
+      newPick.pick = playerPick;
       uint24 newPickId = uint24(currentPickId.current());
       newPick.pickId = newPickId;
 
