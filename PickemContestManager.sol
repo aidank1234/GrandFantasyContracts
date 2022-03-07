@@ -4,15 +4,15 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "./ReusablePickemContest.sol";
 
 // Status 1 is loss, 2 is win, 0 is refund
-  struct ContestPerformance {
-    bytes32 contestName;
-    uint256 entryFee;
-    uint256 payout;
-    uint8 status;
-    uint8 picksCorrect;
-    uint8 totalPicks;
-    address player;
-  }
+struct ContestPerformance {
+  bytes32 contestName;
+  uint256 entryFee;
+  uint256 payout;
+  uint8 status;
+  uint8 picksCorrect;
+  uint8 totalPicks;
+  address player;
+}
 
 contract GrandFantasyManager {
   using Counters for Counters.Counter;
@@ -177,7 +177,6 @@ contract GrandFantasyManager {
       ongoingContracts2 = true;
       enqueue(2);
     } else if(ongoingContracts3 == false) {
-
       // Add game to all contracts
       for(i = 0; i<ncaabContracts3.length; i++) {
         GrandFantasyNFTPickEm pickEm = GrandFantasyNFTPickEm(ncaabContracts3[i]);

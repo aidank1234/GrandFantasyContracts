@@ -7,14 +7,14 @@ import "./PickemContestManager.sol";
 // Team1Name and Team2Name up to 32 characters
 // startTime is unix timestamp
 // winner will be set to 1 or 2 after the game concludes, depending on which team won
-  struct Game {
-    bytes32 team1Name;
-    bytes32 team2Name;
-    uint32 startTime;
-    uint16 id;
-    uint8 winner;
-    string sportsRadarId;
-  }
+struct Game {
+  bytes32 team1Name;
+  bytes32 team2Name;
+  uint32 startTime;
+  uint16 id;
+  uint8 winner;
+  string sportsRadarId;
+}
 
 contract GrandFantasyNFTPickEm {
   using Counters for Counters.Counter;
@@ -156,7 +156,6 @@ contract GrandFantasyNFTPickEm {
       }
     }
   }
-
 
   // Returns the number of current entrants into the contest
   function getCurrentEntrants() public view returns (uint) {
