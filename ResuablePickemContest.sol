@@ -153,8 +153,8 @@ contract GrandFantasyNFTPickEm {
     return currentEntrants.current();
   }
 
-  // Passes administration privleges to a new address
-  function passAdministrationPrivleges(address newAdministrator) public onlyAdmin {
+  // Passes administration privileges to a new address
+  function passAdministrationPrivileges(address newAdministrator) public onlyAdmin {
     administrator = newAdministrator;
   }
 
