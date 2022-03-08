@@ -139,12 +139,7 @@ contract GrandFantasyNFTPickEm {
     else if(contestOpen) {
       // Close contest entries if upkeep is happening within an hour and a half of the
       // earliest game
-      if(block.timestamp > firstGameStartTime) {
-        contestOpen = false;
-        if(currentEntrants.current() < 3) {
-          refundContest();
-        }
-      } else if(firstGameStartTime - block.timestamp <= 5400) {
+      if(block.timestamp > firstGameStartTime || firstGameStartTime - block.timestamp <= 5400) {
         contestOpen = false;
         if(currentEntrants.current() < 3) {
           refundContest();
