@@ -131,7 +131,7 @@ contract GrandFantasyNFTPickEm {
       // Resolve contest and pay out winners if it has been at least 8 hours since the start
       // time of the latest game
       // This also requires knowing the outcome of the games
-      if(block.timestamp > lastGameStartTime && block.timestamp - lastGameStartTime >= 28800) {
+      if(block.timestamp - lastGameStartTime >= 28800) {
         markForPayout();
       }
     }
