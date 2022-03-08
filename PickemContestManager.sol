@@ -21,6 +21,12 @@ contract GrandFantasyManager {
   mapping (address => uint[]) public playerPerformances;
   Counters.Counter private currentPerformanceId;
 
+  // Only executable by contract administrator
+  modifier onlyAdmin {
+    require(msg.sender == administrator);
+    _;
+  }
+
   function receivePerformance(ContestPerformance[] memory newPerformances) public {
     address sender = msg.sender;
     bool senderValid = false;
@@ -68,17 +74,17 @@ contract GrandFantasyManager {
   uint256 last = 0;
 
   function enqueue(uint data) private {
-      last += 1;
-      queue[last] = data;
+    last += 1;
+    queue[last] = data;
   }
 
   function dequeue() private returns (uint data) {
-      require(last >= first);  // non-empty queue
+    require(last >= first);  // non-empty queue
 
-      data = queue[first];
+    data = queue[first];
 
-      delete queue[first];
-      first += 1;
+    delete queue[first];
+    first += 1;
   }
 
   // Holds all reusable ncaab contest smart contracts
@@ -105,18 +111,15 @@ contract GrandFantasyManager {
     currentPerformanceId.increment();
   }
 
-  function addToGroup1(address contractToAdd) public {
-    require(msg.sender == administrator);
+  function addToGroup1(address contractToAdd) public onlyAdmin {
     ncaabContracts1.push(contractToAdd);
   }
 
-  function addToGroup2(address contractToAdd) public {
-    require(msg.sender == administrator);
+  function addToGroup2(address contractToAdd) public onlyAdmin {
     ncaabContracts2.push(contractToAdd);
   }
 
-  function addToGroup3(address contractToAdd) public {
-    require(msg.sender == administrator);
+  function addToGroup3(address contractToAdd) public onlyAdmin {
     ncaabContracts3.push(contractToAdd);
   }
 
@@ -140,8 +143,7 @@ contract GrandFantasyManager {
     return contracts;
   }
 
-  function addGames(Game[] memory newGames) public {
-    require(msg.sender == administrator);
+  function addGames(Game[] memory newGames) public onlyAdmin {
     // There must be contracts available to run the contests on
     require(ongoingContracts1 == false || ongoingContracts2 == false || ongoingContracts3 == false);
     uint i;
@@ -175,32 +177,30 @@ contract GrandFantasyManager {
       ongoingContracts2 = true;
       enqueue(2);
     } else if(ongoingContracts3 == false) {
+      // Add game to all contracts
+      for(i = 0; i<ncaabContracts3.length; i++) {
+        GrandFantasyNFTPickEm pickEm = GrandFantasyNFTPickEm(ncaabContracts3[i]);
+        pickEm.addGames(newGames);
+      }
+      for(i = 0; i<newGames.length; i++) {
+        ncaabGameIds3.push(newGames[i].sportsRadarId);
+      }
 
-        // Add game to all contracts
-        for(i = 0; i<ncaabContracts3.length; i++) {
-          GrandFantasyNFTPickEm pickEm = GrandFantasyNFTPickEm(ncaabContracts3[i]);
-          pickEm.addGames(newGames);
-        }
-        for(i = 0; i<newGames.length; i++) {
-          ncaabGameIds3.push(newGames[i].sportsRadarId);
-        }
-
-        // There are now contests ongoing on the contracts group 3
-        ongoingContracts3 = true;
-        enqueue(3);
+      // There are now contests ongoing on the contracts group 3
+      ongoingContracts3 = true;
+      enqueue(3);
     }
   }
 
   function hashCompareWithLengthCheck(string memory a, string memory b) private returns (bool) {
     if(bytes(a).length != bytes(b).length) {
-        return false;
+      return false;
     } else {
-        return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
+      return keccak256(abi.encodePacked(a)) == keccak256(abi.encodePacked(b));
     }
-}
+  }
 
-  function receiveWinners(Game[] memory finalGames) public {
-    require(msg.sender == administrator);
+  function receiveWinners(Game[] memory finalGames) public onlyAdmin {
     uint contractsToResolve = dequeue();
     uint i;
     uint x;

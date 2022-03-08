@@ -85,12 +85,18 @@ contract GrandFantasyNFTPickEm {
     // Increment the currentPickId so it starts at 1
     currentPickId.increment();
 
-    // Make is so the admin is able to create a new contest by default
+    // Make it so the admin is able to create a new contest by default
     contestResolved = true;
 
     // Set chainlink upkeep variables
     interval = updateInterval;
     lastTimeStamp = block.timestamp;
+  }
+
+  // Only executable by contract administrator
+  modifier onlyAdmin {
+    require(msg.sender == administrator);
+    _;
   }
 
   // Determines whether or not upkeep is needed on the contract
@@ -107,19 +113,14 @@ contract GrandFantasyNFTPickEm {
     }
   }
 
-  function performUpkeep() external {
-    require(msg.sender == administrator);
+  function performUpkeep() external onlyAdmin {
     lastTimeStamp = block.timestamp;
 
     // If the contest is closed for entries, but the next contest has been scheduled
     if(!contestOpen && nextContestStartTime > 0) {
       // Open the contest for entries if the current date is an hour or less before
       // the scheduled time to open entries
-      if(block.timestamp > nextContestStartTime) {
-        contestOpen = true;
-        nextContestStartTime = 0;
-        contestResolved = false;
-      } else if(nextContestStartTime - block.timestamp <= 3600) {
+      if(nextContestStartTime - block.timestamp <= 3600) {
         contestOpen = true;
         nextContestStartTime = 0;
         contestResolved = false;
@@ -130,7 +131,7 @@ contract GrandFantasyNFTPickEm {
       // Resolve contest and pay out winners if it has been at least 8 hours since the start
       // time of the latest game
       // This also requires knowing the outcome of the games
-      if(block.timestamp > lastGameStartTime && block.timestamp - lastGameStartTime >= 28800) {
+      if(block.timestamp - lastGameStartTime >= 28800) {
         markForPayout();
       }
     }
@@ -138,37 +139,27 @@ contract GrandFantasyNFTPickEm {
     else if(contestOpen) {
       // Close contest entries if upkeep is happening within an hour and a half of the
       // earliest game
-      if(block.timestamp > firstGameStartTime) {
-        contestOpen = false;
-        if(currentEntrants.current() < 3) {
-          refundContest();
-        }
-      } else if(firstGameStartTime - block.timestamp <= 5400) {
+      if(firstGameStartTime - block.timestamp <= 5400) {
         contestOpen = false;
         if(currentEntrants.current() < 3) {
           refundContest();
         }
       }
     }
-}
-
+  }
 
   // Returns the number of current entrants into the contest
   function getCurrentEntrants() public view returns (uint) {
     return currentEntrants.current();
   }
 
-  // Passes administration privleges to a new address
-  // ADMINISTRATOR ONLY
-  function passAdministrationPrivleges(address newAdministrator) public {
-    require(msg.sender == administrator);
+  // Passes administration privileges to a new address
+  function passAdministrationPrivileges(address newAdministrator) public onlyAdmin {
     administrator = newAdministrator;
   }
 
   // Set grand fantasy manager address
-  // ADMINISTRATOR ONLY
-  function setManagerAddress(address manager) public {
-    require(msg.sender == administrator);
+  function setManagerAddress(address manager) public onlyAdmin {
     managerAddress = manager;
   }
 
@@ -183,17 +174,14 @@ contract GrandFantasyNFTPickEm {
 
     nextContestStartTime = startTime;
 
-    uint8 requirement = totalPicksRequired - (totalPicksRequired / 3);
-    requirementToWin = requirement;
+    requirementToWin = totalPicksRequired - (totalPicksRequired / 3);
     maxEntrants = 20;
   }
 
   // Setter for metadata regarding this contest
-  // ADMINISTRATOR ONLY
   // Param name - name for the contest for display in UI
   // Param entryFee - entry fee, in wei, for the contest
-  function setContestMetadata(bytes32 name, uint256 entryFee) public {
-    require(msg.sender == administrator);
+  function setContestMetadata(bytes32 name, uint256 entryFee) public onlyAdmin {
     require(contestResolved);
     contestName = name;
     weiEntryFee = entryFee;
@@ -235,10 +223,8 @@ contract GrandFantasyNFTPickEm {
   address[] public playersToday;
 
   // Adds [games] for use in the PickEm contest. Winner value of these games will be set to 0.
-  // ADMINISTRATOR ONLY - this will be called each day at
   // Param newGames are the games to add to the games mapping
-  function addGames(Game[] memory newGames) public {
-    require(msg.sender == managerAddress);
+  function addGames(Game[] memory newGames) public onlyAdmin {
     require(contestResolved);
 
     totalPicksRequired = uint8(newGames.length);
@@ -273,7 +259,7 @@ contract GrandFantasyNFTPickEm {
   }
 
   // Function to make picks here
-  function submitPicksForContest(uint8[] memory playerPicks) public payable {
+  function submitPicksForContest(uint8 playerPicks) public payable {
     // Require contest to be open to place picks
     require(contestOpen);
 
@@ -281,35 +267,32 @@ contract GrandFantasyNFTPickEm {
     require(currentEntrants.current() < maxEntrants);
 
     // Require the value of the transaction to be over the wei entry fee
-    require(msg.value >= weiEntryFee);
+    require(msg.value == weiEntryFee);
 
     address player = msg.sender;
     // Only one entry allowed per player
     require(playerStructs[player].enteredToday == false);
-    // # of picks submitted must exactly equal the number of games
-    require(playerPicks.length == totalPicksRequired);
+
+    // This is a new player, initialize them in the struct
+    if(playerStructs[player].playerAddress == address(0x0)) {
+      Player memory newPlayer;
+      newPlayer.playerAddress = player;
+      playerStructs[player] = newPlayer;
+    }
+    playerStructs[player].pickIds.push(newPickId);
 
     uint i;
-    for(i = 0; i<playerPicks.length; i++) {
+    for(i = 0; i<totalPicksRequired; i++) {
+      uint8 playerPick = ((playerPicks>>i)%2)+1;
       // Picks must either be for team 1 or team 2, no other values
-      require(playerPicks[i] == 1 || playerPicks[i] == 2);
+      require(playerPick == 1 || playerPick == 2);
 
       // Create data for each pick
       Pick memory newPick;
       newPick.gameId = uint16(i);
-      newPick.pick = playerPicks[i];
+      newPick.pick = playerPick;
       uint24 newPickId = uint24(currentPickId.current());
       newPick.pickId = newPickId;
-
-      // This is a new player, initialize them in the struct
-      if(i == 0 && playerStructs[player].playerAddress == address(0x0)) {
-        Player memory newPlayer;
-        newPlayer.playerAddress = player;
-        playerStructs[player] = newPlayer;
-        playerStructs[player].pickIds.push(newPickId);
-      } else {
-        playerStructs[player].pickIds.push(newPickId);
-      }
 
       // Reflect the new pick in the picks struct
       picks[newPickId] = newPick;
