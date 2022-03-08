@@ -120,11 +120,7 @@ contract GrandFantasyNFTPickEm {
     if(!contestOpen && nextContestStartTime > 0) {
       // Open the contest for entries if the current date is an hour or less before
       // the scheduled time to open entries
-      if(block.timestamp > nextContestStartTime) {
-        contestOpen = true;
-        nextContestStartTime = 0;
-        contestResolved = false;
-      } else if(nextContestStartTime - block.timestamp <= 3600) {
+      if(nextContestStartTime - block.timestamp <= 3600) {
         contestOpen = true;
         nextContestStartTime = 0;
         contestResolved = false;
