@@ -85,7 +85,7 @@ contract GrandFantasyNFTPickEm {
     // Increment the currentPickId so it starts at 1
     currentPickId.increment();
 
-    // Make is so the admin is able to create a new contest by default
+    // Make it so the admin is able to create a new contest by default
     contestResolved = true;
 
     // Set chainlink upkeep variables
