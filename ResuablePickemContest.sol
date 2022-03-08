@@ -174,8 +174,7 @@ contract GrandFantasyNFTPickEm {
 
     nextContestStartTime = startTime;
 
-    uint8 requirement = totalPicksRequired - (totalPicksRequired / 3);
-    requirementToWin = requirement;
+    requirementToWin = totalPicksRequired - (totalPicksRequired / 3);
     maxEntrants = 20;
   }
 
