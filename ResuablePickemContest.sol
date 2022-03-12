@@ -1,7 +1,7 @@
 pragma solidity >=0.8.0 <0.9.0;
 
 import "@openzeppelin/contracts/utils/Counters.sol";
-import "./PickemContestManager.sol";
+import "./grandfantasymanager.sol";
 
 // Struct that represents a game for the PickEm
 // Team1Name and Team2Name up to 32 characters
@@ -13,7 +13,7 @@ struct Game {
   uint32 startTime;
   uint16 id;
   uint8 winner;
-  string sportsRadarId;
+  bytes32 rundownId;
 }
 
 contract GrandFantasyNFTPickEm {
@@ -78,9 +78,19 @@ contract GrandFantasyNFTPickEm {
   uint public immutable interval;
   uint public lastTimeStamp;
 
-  constructor(uint updateInterval) {
+  // Maps GameIds to game struct
+  mapping (uint16 => Game) public games;
+
+  constructor(uint updateInterval, bytes32 name, uint256 entryFee, address manager) {
     // Set the administrator to be the contract owner initially
     administrator = msg.sender;
+
+    // Set metadata for the contest contract
+    contestName = name;
+    weiEntryFee = entryFee;
+
+    // Set the contest manager contract
+    managerAddress = manager;
 
     // Increment the currentPickId so it starts at 1
     currentPickId.increment();
@@ -90,7 +100,7 @@ contract GrandFantasyNFTPickEm {
 
     // Set chainlink upkeep variables
     interval = updateInterval;
-    lastTimeStamp = block.timestamp;
+    lastTimeStamp = 0;
   }
 
   // Determines whether or not upkeep is needed on the contract
@@ -108,7 +118,7 @@ contract GrandFantasyNFTPickEm {
   }
 
   function performUpkeep() external {
-    require(msg.sender == administrator);
+    require(msg.sender == administrator || msg.sender == managerAddress);
     lastTimeStamp = block.timestamp;
 
     // If the contest is closed for entries, but the next contest has been scheduled
@@ -128,7 +138,7 @@ contract GrandFantasyNFTPickEm {
     // If the contest is closed for entries and a contest is ongoing
     else if(!contestOpen && nextContestStartTime == 0 && gameWinnersReceived) {
       // Resolve contest and pay out winners if it has been at least 8 hours since the start
-      // time of the latest game
+      // time of the lastest game
       // This also requires knowing the outcome of the games
       if(block.timestamp > lastGameStartTime && block.timestamp - lastGameStartTime >= 28800) {
         markForPayout();
@@ -158,6 +168,15 @@ contract GrandFantasyNFTPickEm {
     return currentEntrants.current();
   }
 
+  // Returns the number of maximum entrants into the contest
+  function getMaxEntrants() public view returns (uint) {
+    return maxEntrants;
+  }
+
+  function getContestOpen() public view returns (bool) {
+    return contestOpen;
+  }
+
   // Passes administration privleges to a new address
   // ADMINISTRATOR ONLY
   function passAdministrationPrivleges(address newAdministrator) public {
@@ -165,16 +184,12 @@ contract GrandFantasyNFTPickEm {
     administrator = newAdministrator;
   }
 
-  // Set grand fantasy manager address
-  // ADMINISTRATOR ONLY
-  function setManagerAddress(address manager) public {
-    require(msg.sender == administrator);
-    managerAddress = manager;
-  }
-
   // Function that sets the start time, number of picks required to win, and
   // maximum entrants of a new contest
+  // ADMINISTRATOR ONLY
   // Param startTime - unix timestamp for start time
+  // Param requirement - # of correct picks required to win the PickEm contest
+  // Param max - maximum entrants into this contest
   function setContestDetails(uint32 startTime) private {
     require(contestResolved);
 
@@ -187,20 +202,6 @@ contract GrandFantasyNFTPickEm {
     requirementToWin = requirement;
     maxEntrants = 20;
   }
-
-  // Setter for metadata regarding this contest
-  // ADMINISTRATOR ONLY
-  // Param name - name for the contest for display in UI
-  // Param entryFee - entry fee, in wei, for the contest
-  function setContestMetadata(bytes32 name, uint256 entryFee) public {
-    require(msg.sender == administrator);
-    require(contestResolved);
-    contestName = name;
-    weiEntryFee = entryFee;
-  }
-
-  // Maps GameIds to game struct
-  mapping (uint16 => Game) public games;
 
   // Returns an array of all games that have been added to the contest
   function getGames() public view returns(Game[] memory) {
@@ -241,35 +242,37 @@ contract GrandFantasyNFTPickEm {
     require(msg.sender == managerAddress);
     require(contestResolved);
 
-    totalPicksRequired = uint8(newGames.length);
+    if(newGames.length > 0) {
+      totalPicksRequired = uint8(newGames.length);
 
-    // Only the administrator can send in games and
-    // will not send more than how many PickEm games are in a day. Likely ~10
-    uint i;
+      // Only the administrator can send in games and
+      // will not send more than how many PickEm games are in a day. Likely ~10
+      uint i;
 
-    // Use max int for comparison
-    uint256 firstStartTime = 2**256 - 1;
-    uint32 lastStartTime;
-    for (i = 0; i < newGames.length; i++) {
-      // Record the start time of the earliest game and the start time of the
-      // lastest game
-      if(uint256(newGames[i].startTime) < firstStartTime) {
-        firstStartTime = uint256(newGames[i].startTime);
+      // Use max int for comparison
+      uint256 firstStartTime = 2**256 - 1;
+      uint32 lastStartTime;
+      for (i = 0; i < newGames.length; i++) {
+        // Record the start time of the earliest game and the start time of the
+        // lastest game
+        if(uint256(newGames[i].startTime) < firstStartTime) {
+          firstStartTime = uint256(newGames[i].startTime);
+        }
+        if(newGames[i].startTime > lastStartTime) {
+          lastStartTime = newGames[i].startTime;
+        }
+
+        games[newGames[i].id] = newGames[i];
       }
-      if(newGames[i].startTime > lastStartTime) {
-        lastStartTime = newGames[i].startTime;
-      }
 
-      games[newGames[i].id] = newGames[i];
+      // Save earliest and latest start time to storage
+      firstGameStartTime = uint32(firstStartTime);
+      lastGameStartTime = lastStartTime;
+
+      // Open contest for entries 24 hours before games
+      uint256 contestStartTime = firstStartTime - 86400;
+      setContestDetails(uint32(contestStartTime));
     }
-
-    // Save earliest and latest start time to storage
-    firstGameStartTime = uint32(firstStartTime);
-    lastGameStartTime = lastStartTime;
-
-    // Open contest for entries 24 hours before games
-    uint256 contestStartTime = firstStartTime - 86400;
-    setContestDetails(uint32(contestStartTime));
   }
 
   // Function to make picks here
@@ -466,7 +469,8 @@ contract GrandFantasyNFTPickEm {
   }
 
   //Function to refund contest
-  function refundContest() private {
+  function refundContest() public {
+    require(msg.sender == administrator || msg.sender == managerAddress);
     uint i;
     ContestPerformance[] memory refundPerformances = new ContestPerformance[](playersToday.length);
     for(i = 0; i < playersToday.length; i++) {
@@ -480,6 +484,7 @@ contract GrandFantasyNFTPickEm {
 
       // Refund the entry fee to the contest
       player.weiOwed = player.weiOwed + weiEntryFee;
+
 
       // Set memory variable back to storage so that changes persist
       playerStructs[playersToday[i]] = player;
@@ -521,15 +526,17 @@ contract GrandFantasyNFTPickEm {
   // to withdraw this money
   function withdrawWinnings() public {
     if(playerStructs[msg.sender].weiOwed > 0) {
+      playerStructs[msg.sender].weiOwed = 0;
       (bool sent, bytes memory data) = msg.sender.call{value: playerStructs[msg.sender].weiOwed}("");
       require(sent, "Failed to send matic");
-      playerStructs[msg.sender].weiOwed = 0;
     }
   }
 
-  // Getter function for the client API to check how much wei the user is owed,
-  // prior to creating a withdraw transaction
-  function getWinningsOwed() public view returns(uint256) {
-    return playerStructs[msg.sender].weiOwed;
+  function getWinningsOwed(address player) public view returns(uint) {
+    return playerStructs[player].weiOwed;
+  }
+
+  function getEnteredToday(address player) public view returns(bool) {
+    return playerStructs[player].enteredToday;
   }
 }
